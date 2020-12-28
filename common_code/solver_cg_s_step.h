@@ -13,13 +13,15 @@ public:
   SolverCGSStep(SolverControl &cn, const unsigned int n_steps = 1)
     : cn(cn)
     , n_steps(n_steps)
-    , times(6, 0.0)
+    , times(7, 0.0)
   {}
 
   template <typename Operator, typename VectorType>
   void
   solve(const Operator &A, VectorType &x, const VectorType &f)
   {
+    Timer time;
+
     std::vector<std::shared_ptr<VectorType>> T(n_steps + 1);
     std::vector<std::shared_ptr<VectorType>> P_(n_steps);
 
@@ -87,11 +89,13 @@ public:
 
     unsigned int c = 1;
 
+    times[0] += time.wall_time();
+
     while (conv == SolverControl::iterate)
       {
         // matrix-power kernel (r=k; w=k)
         {
-          ScopedTimer timer(times[0]);
+          ScopedTimer timer(times[1]);
 
           for (unsigned int i = 0; i < n_steps; ++i)
             A.vmult(*T[i + 1], *T[i]);
@@ -99,7 +103,7 @@ public:
 
         // find direction
         {
-          ScopedTimer timer(times[1]);
+          ScopedTimer timer(times[2]);
 
           if (c == 1)
             {
@@ -149,7 +153,7 @@ public:
 
         // block-dot products (r=2*k; w=0)
         {
-          ScopedTimer timer(times[2]);
+          ScopedTimer timer(times[3]);
 
           W = 0.0;
           for (unsigned int k = 0; k < local_size; ++k)
@@ -181,7 +185,7 @@ public:
         }
 
         {
-          ScopedTimer timer(times[3]);
+          ScopedTimer timer(times[4]);
 
           // find scalars alpha
 #ifdef FORCE_ITERATION
@@ -199,14 +203,14 @@ public:
         }
 
         {
-          ScopedTimer timer(times[4]);
+          ScopedTimer timer(times[5]);
 
           // compute residual (r=3; w=1)
           compute_residual(A, x, f, r);
         }
 
         {
-          ScopedTimer timer(times[5]);
+          ScopedTimer timer(times[6]);
 
           conv = cn.check(c, r.l2_norm());
         }

@@ -47,7 +47,10 @@ run_cg_solver(const Operator &                                  laplace_operator
 
 template <int dim, int fe_degree, int n_q_points>
 void
-run_templated(const unsigned int s, const bool short_output, const MPI_Comm &comm_shmem)
+run_templated(const unsigned int s,
+              const bool         short_output,
+              const MPI_Comm &   comm_shmem,
+              const bool         deform = true)
 {
 #ifndef USE_SHMEM
   (void)comm_shmem;
@@ -90,10 +93,13 @@ run_templated(const unsigned int s, const bool short_output, const MPI_Comm &com
   for (unsigned int d = 0; d < dim; ++d)
     p2[d] = subdivisions[d];
   GridGenerator::subdivided_hyper_rectangle(tria, subdivisions, Point<dim>(), p2);
-  GridTools::transform(std::bind(&MyManifold<dim>::push_forward, manifold, std::placeholders::_1),
-                       tria);
-  tria.set_all_manifold_ids(1);
-  tria.set_manifold(1, manifold);
+  if (deform)
+    {
+      GridTools::transform(
+        std::bind(&MyManifold<dim>::push_forward, manifold, std::placeholders::_1), tria);
+      tria.set_all_manifold_ids(1);
+      tria.set_manifold(1, manifold);
+    }
   tria.refine_global(n_refine);
 
   MappingQGeneric<dim> mapping(2);

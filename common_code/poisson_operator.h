@@ -70,7 +70,8 @@ namespace Poisson
             int n_components_            = 1,
             typename Number              = double,
             typename VectorType          = LinearAlgebra::distributed::Vector<Number>,
-            typename VectorizedArrayType = VectorizedArray<Number>>
+            typename VectorizedArrayType = VectorizedArray<Number>,
+            bool use_basic_geometry      = false>
   class LaplaceOperator
   {
   public:
@@ -477,43 +478,47 @@ namespace Poisson
                     phi.begin_values(),
                     phi_grads + 2 * c * n_q_points);
                 }
-              for (unsigned int q = 0, qy = 0; qy < n_q_points_1d; ++qy)
-                {
-                  const Number     y  = quad_1d.point(qy)[0];
-                  const TensorType x1 = v[1] + y * (v[4] + y * v[7]);
-                  const TensorType x2 = v[2] + y * (v[5] + y * v[8]);
-                  const TensorType d0 = v[3] + (y + y) * v[6];
-                  const TensorType d1 = v[4] + (y + y) * v[7];
-                  const TensorType d2 = v[5] + (y + y) * v[8];
-                  for (unsigned int qx = 0; qx < n_q_points_1d; ++qx, ++q)
-                    {
-                      const Number q_weight = quad_1d.weight(qy) * quad_1d.weight(qx);
-                      const Number x        = quad_1d.point(qx)[0];
-                      Tensor<2, dim, VectorizedArrayType> jac;
-                      jac[0]                        = x1 + (x + x) * x2;
-                      jac[1]                        = d0 + x * d1 + (x * x) * d2;
-                      const VectorizedArrayType det = do_invert(jac);
+              if (use_basic_geometry)
+                for (unsigned int q = 0; q < phi.n_q_points; ++q)
+                  phi.submit_gradient(phi.get_gradient(q), q);
+              else
+                for (unsigned int q = 0, qy = 0; qy < n_q_points_1d; ++qy)
+                  {
+                    const Number     y  = quad_1d.point(qy)[0];
+                    const TensorType x1 = v[1] + y * (v[4] + y * v[7]);
+                    const TensorType x2 = v[2] + y * (v[5] + y * v[8]);
+                    const TensorType d0 = v[3] + (y + y) * v[6];
+                    const TensorType d1 = v[4] + (y + y) * v[7];
+                    const TensorType d2 = v[5] + (y + y) * v[8];
+                    for (unsigned int qx = 0; qx < n_q_points_1d; ++qx, ++q)
+                      {
+                        const Number q_weight = quad_1d.weight(qy) * quad_1d.weight(qx);
+                        const Number x        = quad_1d.point(qx)[0];
+                        Tensor<2, dim, VectorizedArrayType> jac;
+                        jac[0]                        = x1 + (x + x) * x2;
+                        jac[1]                        = d0 + x * d1 + (x * x) * d2;
+                        const VectorizedArrayType det = do_invert(jac);
 
-                      for (unsigned int c = 0; c < n_components; ++c)
-                        {
-                          const unsigned int  offset = c * dim * n_q_points;
-                          VectorizedArrayType tmp[dim];
-                          for (unsigned int d = 0; d < dim; ++d)
-                            {
-                              tmp[d] = jac[d][0] * phi_grads[q + offset];
-                              for (unsigned int e = 1; e < dim; ++e)
-                                tmp[d] += jac[d][e] * phi_grads[q + e * n_q_points + offset];
-                              tmp[d] *= det * q_weight;
-                            }
-                          for (unsigned int d = 0; d < dim; ++d)
-                            {
-                              phi_grads[q + d * n_q_points + offset] = jac[0][d] * tmp[0];
-                              for (unsigned int e = 1; e < dim; ++e)
-                                phi_grads[q + d * n_q_points + offset] += jac[e][d] * tmp[e];
-                            }
-                        }
-                    }
-                }
+                        for (unsigned int c = 0; c < n_components; ++c)
+                          {
+                            const unsigned int  offset = c * dim * n_q_points;
+                            VectorizedArrayType tmp[dim];
+                            for (unsigned int d = 0; d < dim; ++d)
+                              {
+                                tmp[d] = jac[d][0] * phi_grads[q + offset];
+                                for (unsigned int e = 1; e < dim; ++e)
+                                  tmp[d] += jac[d][e] * phi_grads[q + e * n_q_points + offset];
+                                tmp[d] *= det * q_weight;
+                              }
+                            for (unsigned int d = 0; d < dim; ++d)
+                              {
+                                phi_grads[q + d * n_q_points + offset] = jac[0][d] * tmp[0];
+                                for (unsigned int e = 1; e < dim; ++e)
+                                  phi_grads[q + d * n_q_points + offset] += jac[e][d] * tmp[e];
+                              }
+                          }
+                      }
+                  }
               for (unsigned int c = 0; c < n_components; ++c)
                 {
                   Eval::template apply<0, false, false, 1>(
@@ -569,60 +574,132 @@ namespace Poisson
                         phi.begin_values() + c * n_q_points + qz * n_q_points_2d,
                         phi_grads + 2 * c * n_q_points_2d);
                     }
-                  const Number z = quad_1d.point(qz)[0];
-                  di[0]          = v[9] + (z + z) * v[18];
-                  for (unsigned int i = 1; i < 9; ++i)
+                  if (use_basic_geometry)
                     {
-                      xi[i] = v[i] + z * (v[9 + i] + z * v[18 + i]);
-                      di[i] = v[9 + i] + (z + z) * v[18 + i];
-                    }
-                  for (unsigned int qy = 0; qy < n_q_points_1d; ++qy)
-                    {
-                      const auto       y            = quad_1d.point(qy)[0];
-                      const TensorType x1           = xi[1] + y * (xi[4] + y * xi[7]);
-                      const TensorType x2           = xi[2] + y * (xi[5] + y * xi[8]);
-                      const TensorType dy0          = xi[3] + (y + y) * xi[6];
-                      const TensorType dy1          = xi[4] + (y + y) * xi[7];
-                      const TensorType dy2          = xi[5] + (y + y) * xi[8];
-                      const TensorType dz0          = di[0] + y * (di[3] + y * di[6]);
-                      const TensorType dz1          = di[1] + y * (di[4] + y * di[7]);
-                      const TensorType dz2          = di[2] + y * (di[5] + y * di[8]);
-                      double           q_weight_tmp = quad_1d.weight(qz) * quad_1d.weight(qy);
-                      for (unsigned int qx = 0; qx < n_q_points_1d; ++qx, ++q)
-                        {
-                          const Number                        x = quad_1d.point(qx)[0];
-                          Tensor<2, dim, VectorizedArrayType> jac;
-                          jac[0]                  = x1 + (x + x) * x2;
-                          jac[1]                  = dy0 + x * (dy1 + x * dy2);
-                          jac[2]                  = dz0 + x * (dz1 + x * dz2);
-                          VectorizedArrayType det = do_invert(jac);
-                          det                     = det * (q_weight_tmp * quad_1d.weight(qx));
-
+                      const Tensor<2, dim, VectorizedArrayType> *jac =
+                        data.get_mapping_info().cell_data[0].jacobians[0].begin() +
+                        data.get_mapping_info().cell_data[0].data_index_offsets[cell];
+                      const VectorizedArrayType *jxw =
+                        data.get_mapping_info().cell_data[0].JxW_values.begin() +
+                        data.get_mapping_info().cell_data[0].data_index_offsets[cell];
+                      const Number *weights = data.get_mapping_info()
+                                                .cell_data[0]
+                                                .descriptor[0]
+                                                .quadrature_weights.begin();
+                      if (data.get_mapping_info().cell_type[cell] <=
+                          internal::MatrixFreeFunctions::affine)
+                        for (unsigned int q1 = 0; q1 < n_q_points_2d; ++q1, ++q)
+                          {
+                            const VectorizedArrayType det = jxw[0] * weights[q];
+                            for (unsigned int c = 0; c < n_components; ++c)
+                              {
+                                VectorizedArrayType tmp[dim], tmp2[dim];
+                                for (unsigned int d = 0; d < dim; ++d)
+                                  {
+                                    tmp[d] =
+                                      jac[0][d][0] * phi_grads[q1 + c * 2 * n_q_points_2d] +
+                                      jac[0][d][1] * phi_grads[q1 + (c * 2 + 1) * n_q_points_2d] +
+                                      jac[0][d][2] *
+                                        phi_grads[q + 2 * n_components * n_q_points_2d +
+                                                  c * n_q_points];
+                                    tmp[d] *= det;
+                                  }
+                                for (unsigned int d = 0; d < dim; ++d)
+                                  {
+                                    tmp2[d] = jac[0][0][d] * tmp[0];
+                                    for (unsigned int e = 1; e < dim; ++e)
+                                      tmp2[d] += jac[0][e][d] * tmp[e];
+                                  }
+                                phi_grads[q1 + c * 2 * n_q_points_2d]       = tmp2[0];
+                                phi_grads[q1 + (c * 2 + 1) * n_q_points_2d] = tmp2[1];
+                                phi_grads[q + 2 * n_components * n_q_points_2d + c * n_q_points] =
+                                  tmp2[2];
+                              }
+                          }
+                      else
+                        for (unsigned int q1 = 0; q1 < n_q_points_2d; ++q1, ++q)
                           for (unsigned int c = 0; c < n_components; ++c)
                             {
                               VectorizedArrayType tmp[dim], tmp2[dim];
                               for (unsigned int d = 0; d < dim; ++d)
                                 {
                                   tmp[d] =
-                                    jac[d][0] *
-                                      phi_grads[qy * n_q_points_1d + qx + c * 2 * n_q_points_2d] +
-                                    jac[d][1] * phi_grads[qy * n_q_points_1d + qx +
-                                                          (c * 2 + 1) * n_q_points_2d] +
-                                    jac[d][2] * phi_grads[q + 2 * n_components * n_q_points_2d +
-                                                          c * n_q_points];
-                                  tmp[d] *= det;
+                                    jac[q][d][0] * phi_grads[q1 + c * 2 * n_q_points_2d] +
+                                    jac[q][d][1] * phi_grads[q1 + (c * 2 + 1) * n_q_points_2d] +
+                                    jac[q][d][2] * phi_grads[q + 2 * n_components * n_q_points_2d +
+                                                             c * n_q_points];
+                                  tmp[d] *= jxw[q];
                                 }
                               for (unsigned int d = 0; d < dim; ++d)
                                 {
-                                  tmp2[d] = jac[0][d] * tmp[0];
+                                  tmp2[d] = jac[q][0][d] * tmp[0];
                                   for (unsigned int e = 1; e < dim; ++e)
-                                    tmp2[d] += jac[e][d] * tmp[e];
+                                    tmp2[d] += jac[q][e][d] * tmp[e];
                                 }
-                              phi_grads[qy * n_q_points_1d + qx + c * 2 * n_q_points_2d] = tmp2[0];
-                              phi_grads[qy * n_q_points_1d + qx + (c * 2 + 1) * n_q_points_2d] =
-                                tmp2[1];
+                              phi_grads[q1 + c * 2 * n_q_points_2d]       = tmp2[0];
+                              phi_grads[q1 + (c * 2 + 1) * n_q_points_2d] = tmp2[1];
                               phi_grads[q + 2 * n_components * n_q_points_2d + c * n_q_points] =
                                 tmp2[2];
+                            }
+                    }
+                  else
+                    {
+                      const Number z = quad_1d.point(qz)[0];
+                      di[0]          = v[9] + (z + z) * v[18];
+                      for (unsigned int i = 1; i < 9; ++i)
+                        {
+                          xi[i] = v[i] + z * (v[9 + i] + z * v[18 + i]);
+                          di[i] = v[9 + i] + (z + z) * v[18 + i];
+                        }
+                      for (unsigned int qy = 0; qy < n_q_points_1d; ++qy)
+                        {
+                          const auto       y            = quad_1d.point(qy)[0];
+                          const TensorType x1           = xi[1] + y * (xi[4] + y * xi[7]);
+                          const TensorType x2           = xi[2] + y * (xi[5] + y * xi[8]);
+                          const TensorType dy0          = xi[3] + (y + y) * xi[6];
+                          const TensorType dy1          = xi[4] + (y + y) * xi[7];
+                          const TensorType dy2          = xi[5] + (y + y) * xi[8];
+                          const TensorType dz0          = di[0] + y * (di[3] + y * di[6]);
+                          const TensorType dz1          = di[1] + y * (di[4] + y * di[7]);
+                          const TensorType dz2          = di[2] + y * (di[5] + y * di[8]);
+                          double           q_weight_tmp = quad_1d.weight(qz) * quad_1d.weight(qy);
+                          for (unsigned int qx = 0; qx < n_q_points_1d; ++qx, ++q)
+                            {
+                              const Number                        x = quad_1d.point(qx)[0];
+                              Tensor<2, dim, VectorizedArrayType> jac;
+                              jac[0]                  = x1 + (x + x) * x2;
+                              jac[1]                  = dy0 + x * (dy1 + x * dy2);
+                              jac[2]                  = dz0 + x * (dz1 + x * dz2);
+                              VectorizedArrayType det = do_invert(jac);
+                              det                     = det * (q_weight_tmp * quad_1d.weight(qx));
+
+                              for (unsigned int c = 0; c < n_components; ++c)
+                                {
+                                  VectorizedArrayType tmp[dim], tmp2[dim];
+                                  for (unsigned int d = 0; d < dim; ++d)
+                                    {
+                                      tmp[d] =
+                                        jac[d][0] * phi_grads[qy * n_q_points_1d + qx +
+                                                              c * 2 * n_q_points_2d] +
+                                        jac[d][1] * phi_grads[qy * n_q_points_1d + qx +
+                                                              (c * 2 + 1) * n_q_points_2d] +
+                                        jac[d][2] * phi_grads[q + 2 * n_components * n_q_points_2d +
+                                                              c * n_q_points];
+                                      tmp[d] *= det;
+                                    }
+                                  for (unsigned int d = 0; d < dim; ++d)
+                                    {
+                                      tmp2[d] = jac[0][d] * tmp[0];
+                                      for (unsigned int e = 1; e < dim; ++e)
+                                        tmp2[d] += jac[e][d] * tmp[e];
+                                    }
+                                  phi_grads[qy * n_q_points_1d + qx + c * 2 * n_q_points_2d] =
+                                    tmp2[0];
+                                  phi_grads[qy * n_q_points_1d + qx + (c * 2 + 1) * n_q_points_2d] =
+                                    tmp2[1];
+                                  phi_grads[q + 2 * n_components * n_q_points_2d + c * n_q_points] =
+                                    tmp2[2];
+                                }
                             }
                         }
                     }

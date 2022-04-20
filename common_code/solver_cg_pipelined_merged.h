@@ -144,7 +144,7 @@ public:
     number local_dot_sum_1;
     number local_dot_sum_2;
 
-    const typename VectorType::size_type vec_size_local = x.local_size();
+    const typename VectorType::size_type vec_size_local = x.locally_owned_size();
 
     while (conv == dealii::SolverControl::iterate)
       {

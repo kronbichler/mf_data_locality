@@ -60,7 +60,7 @@ public:
     std::vector<Number> temp1(n_steps, 0);
     std::vector<Number> temp3(n_steps * n_steps + n_steps, 0);
 
-    const unsigned int local_size = r.local_size();
+    const unsigned int local_size = r.locally_owned_size();
 
     const auto compute_residual = [](const auto &A, const auto &x, const auto &f, auto &r) {
       Number residual_norm_square = 0.;

@@ -20,11 +20,11 @@ public:
     if (dim == 1)
       {
         DEAL_II_OPENMP_SIMD_PRAGMA
-        for (unsigned int i = 0; i < diagonal.local_size(); ++i)
+        for (unsigned int i = 0; i < diagonal.locally_owned_size(); ++i)
           dst.local_element(i) = diagonal.local_element(i) * src.local_element(i);
       }
     else
-      for (unsigned int i = 0, c = 0; i < diagonal.local_size(); ++i)
+      for (unsigned int i = 0, c = 0; i < diagonal.locally_owned_size(); ++i)
         {
           const Number diag = diagonal.local_element(i);
           for (unsigned int d = 0; d < dim; ++d, ++c)

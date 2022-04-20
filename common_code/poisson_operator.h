@@ -413,7 +413,7 @@ namespace Poisson
           phi.distribute_local_to_global(diag);
         }
       diag.compress(VectorOperation::add);
-      for (unsigned int i = 0; i < diag.local_size(); ++i)
+      for (unsigned int i = 0; i < diag.locally_owned_size(); ++i)
         if (diag.local_element(i) == 0.)
           diag.local_element(i) = 1.;
         else

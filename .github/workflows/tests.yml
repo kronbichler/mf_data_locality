@@ -5,25 +5,45 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  schedule:
+  - cron:  '0 0 * * *'
+
+concurrency:
+  group: ${ {github.event_name }}-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{github.event_name == 'pull_request'}}    
+
+env:
+  COMPILE_JOBS: 2
 
 jobs:
   build:
-
+    name: Build ${{ matrix.build_type }}-dealii:${{ matrix.dealii_version }}
     runs-on: ubuntu-latest
 
-    steps:
-    - uses: actions/checkout@v2
-    - name: setup
-      run: |
-         command="git clone https://github.com/${{ github.repository }} && \ 
-                  cd mf_data_locality                                   && \
-                  git fetch origin ${{ github.ref }}                    && \ 
-                  git checkout FETCH_HEAD                               && \
-                  mkdir build                                           && \ 
-                  cd build                                              && \ 
-                  cmake ..                                              && \ 
-                  make -j2                                              && \
-                  ctest -V -j2"
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: ["Release", "Debug"]
+        dealii_version: ["master"]
 
-         echo $command
-         docker run -t dealii/dealii:master-focal /bin/sh -c "$command";
+    container:
+      image: dealii/dealii:${{ matrix.dealii_version }}-focal
+      options: --user root
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Compile
+        run: |
+          mkdir build
+          cd build
+          cmake ../ -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          make -j${{ env.COMPILE_JOBS }}
+
+      - name: Test
+        run: |
+          export OMPI_ALLOW_RUN_AS_ROOT=1
+          export OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
+          cd build
+          ctest -V -j2
+          

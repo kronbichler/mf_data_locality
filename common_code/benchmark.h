@@ -181,7 +181,7 @@ run_templated(const unsigned int s, const bool short_output, const MPI_Comm &com
   laplace_operator.initialize_dof_vector(input);
   laplace_operator.initialize_dof_vector(output);
   laplace_operator.initialize_dof_vector(tmp);
-  for (unsigned int i = 0; i < input.local_size(); ++i)
+  for (unsigned int i = 0; i < input.locally_owned_size(); ++i)
     if (!constraints.is_constrained(input.get_partitioner()->local_to_global(i)))
       input.local_element(i) = i % 8;
 

@@ -329,7 +329,7 @@ do_cg_update5(const dealii::LinearAlgebra::distributed::Vector<Number> &d,
     reinterpret_cast<const dealii::VectorizedArray<Number> *>(g.begin());
   const Number       alpha_plus_alpha_old = alpha + alpha_old / beta_old;
   const Number       alpha_old_beta_old   = alpha_old / beta_old;
-  const unsigned int end                  = g.local_size();
+  const unsigned int end                  = g.locally_owned_size();
   for (unsigned int i = 0; i < end / dealii::VectorizedArray<Number>::size(); ++i)
     {
       dealii::VectorizedArray<Number> arr_prec;
@@ -372,7 +372,7 @@ do_cg_update5(const dealii::LinearAlgebra::distributed::Vector<Number> &d,
     reinterpret_cast<const dealii::VectorizedArray<Number> *>(g.begin());
   const Number       alpha_plus_alpha_old = alpha + alpha_old / beta_old;
   const Number       alpha_old_beta_old   = alpha_old / beta_old;
-  const unsigned int end                  = g.local_size();
+  const unsigned int end                  = g.locally_owned_size();
   for (unsigned int i = 0; i < end / dealii::VectorizedArray<Number>::size(); ++i)
     {
       arr_x[i] += alpha_plus_alpha_old * arr_p[i] + alpha_old_beta_old * arr_r[i];
@@ -505,9 +505,9 @@ public:
           A.vmult(h, d, pre, post);
         else
           {
-            pre(0, h.get_partitioner()->local_size());
+            pre(0, h.get_partitioner()->locally_owned_size());
             A.vmult(h, d);
-            post(0, h.get_partitioner()->local_size());
+            post(0, h.get_partitioner()->locally_owned_size());
           }
 
         dealii::Tensor<1, 7> results;

@@ -183,7 +183,7 @@ public:
       ScopedTimer                                             timer(time_comp);
       dealii::internal::VectorOperations::Dot<Number, Number> dot(a.begin(), b.begin());
       dealii::internal::VectorOperations::parallel_reduce(
-        dot, 0, partitioner->local_size(), local_result, dummy);
+        dot, 0, partitioner->locally_owned_size(), local_result, dummy);
     }
 
     {

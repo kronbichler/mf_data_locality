@@ -98,7 +98,7 @@ run(const unsigned int s, const unsigned int fe_degree, const unsigned int n_com
   {
     const auto &              di = matrix_free->get_dof_info(0);
     const auto &              ti = matrix_free->get_task_info();
-    std::vector<unsigned int> distances(di.vector_partitioner->local_size() / 64 + 1,
+    std::vector<unsigned int> distances(di.vector_partitioner->locally_owned_size() / 64 + 1,
                                         numbers::invalid_unsigned_int);
     for (unsigned int id =
            di.cell_loop_pre_list_index[ti.partition_row_index[ti.partition_row_index.size() - 2]];

@@ -22,7 +22,6 @@
 #include "../common_code/curved_manifold.h"
 #include "../common_code/diagonal_matrix_blocked.h"
 #include "../common_code/poisson_operator.h"
-#include "../common_code/renumber_dofs_for_mf.h"
 
 using namespace dealii;
 
@@ -96,8 +95,7 @@ run(const unsigned int s,
   mf_data.tasks_parallel_scheme =
     MatrixFree<dim, double, VectorizedArrayType>::AdditionalData::TasksParallelScheme::none;
 
-  Renumber<dim, double> renum(0, 1, 2);
-  renum.renumber(dof_handler, constraints, mf_data);
+  DoFRenumbering::matrix_free_data_locality(dof_handler, constraints, mf_data);
 
   DoFTools::extract_locally_relevant_dofs(dof_handler, relevant_dofs);
   constraints.clear();

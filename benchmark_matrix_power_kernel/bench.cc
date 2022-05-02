@@ -28,7 +28,10 @@ using namespace dealii;
 
 template <int dim>
 void
-run(const unsigned int s, const unsigned int fe_degree, const unsigned int n_components = 1)
+run(const unsigned int s,
+    const unsigned int fe_degree,
+    const bool         deformed_mesh,
+    const unsigned int n_components = 1)
 {
   using Number              = double;
   using VectorizedArrayType = VectorizedArray<Number>;
@@ -36,6 +39,7 @@ run(const unsigned int s, const unsigned int fe_degree, const unsigned int n_com
   unsigned int       n_refine  = s / 6;
   const unsigned int remainder = s % 6;
 
+  MyManifold<dim>           manifold;
   Triangulation<dim>        tria;
   std::vector<unsigned int> subdivisions(dim, 1);
   if (remainder == 1 && s > 1)
@@ -61,6 +65,15 @@ run(const unsigned int s, const unsigned int fe_degree, const unsigned int n_com
   for (unsigned int d = 0; d < dim; ++d)
     p2[d] = subdivisions[d];
   GridGenerator::subdivided_hyper_rectangle(tria, subdivisions, Point<dim>(), p2);
+
+  if (deformed_mesh)
+    {
+      GridTools::transform(
+        std::bind(&MyManifold<dim>::push_forward, manifold, std::placeholders::_1), tria);
+      tria.set_all_manifold_ids(1);
+      tria.set_manifold(1, manifold);
+    }
+
   tria.refine_global(n_refine);
 
   MappingQGeneric<dim> mapping(2);
@@ -292,19 +305,21 @@ run(const unsigned int s, const unsigned int fe_degree, const unsigned int n_com
 int
 main(int argc, char **argv)
 {
-  // mpirun -np 40 ./benchmark_matrix_power_kernel/bench 3 5 34
+  // mpirun -np 40 ./benchmark_matrix_power_kernel/bench 3 5 34 0
+  // mpirun -np 40 ./benchmark_matrix_power_kernel/bench 3 5 31 1
   Utilities::MPI::MPI_InitFinalize mpi(argc, argv, 1);
 
   AssertThrow(argc > 3, ExcNotImplemented());
 
-  const unsigned int dim     = std::atoi(argv[1]);
-  const unsigned int degree  = std::atoi(argv[2]);
-  const unsigned int n_steps = std::atoi(argv[3]);
+  const unsigned int dim           = std::atoi(argv[1]);
+  const unsigned int degree        = std::atoi(argv[2]);
+  const unsigned int n_steps       = std::atoi(argv[3]);
+  const unsigned int deformed_mesh = std::atoi(argv[4]);
 
   if (dim == 2)
-    run<3>(n_steps, degree);
+    run<3>(n_steps, degree, deformed_mesh);
   else if (dim == 3)
-    run<3>(n_steps, degree);
+    run<3>(n_steps, degree, deformed_mesh);
   else
     AssertThrow(false, ExcNotImplemented());
 

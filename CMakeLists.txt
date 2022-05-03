@@ -51,6 +51,7 @@ enable_testing()
 ADD_SUBDIRECTORY(cmake)
 
 ADD_SUBDIRECTORY(benchmark_basic)
+ADD_SUBDIRECTORY(benchmark_matrix_power_kernel)
 ADD_SUBDIRECTORY(benchmark_merged)
 ADD_SUBDIRECTORY(benchmark_precond)
 ADD_SUBDIRECTORY(benchmark_precond_comm)

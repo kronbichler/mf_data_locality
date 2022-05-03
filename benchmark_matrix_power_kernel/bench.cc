@@ -160,6 +160,8 @@ run(const unsigned int s,
     dummy,
     dummy);
 
+  std::vector<std::vector<unsigned int>> my_indices(counter);
+
   counter = 0;
   matrix_free.template loop_cell_centric<double, double>(
     [&](const auto &data, auto &, const auto &, const auto cells) {
@@ -169,11 +171,12 @@ run(const unsigned int s,
         {
           const auto n_active_entries_per_cell_batch = data.n_active_entries_per_cell_batch(cell);
 
-
           // std::cout << n_active_entries_per_cell_batch << std::endl;
 
           for (unsigned int v = 0; v < n_active_entries_per_cell_batch; ++v)
             {
+              my_indices[counter].push_back(cell * VectorizedArrayType::size() + v);
+
               const auto cell_iterator = matrix_free.get_cell_iterator(cell, v);
 
               for (const auto i : cell_iterator->vertex_indices())
@@ -294,6 +297,68 @@ run(const unsigned int s,
   if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
     std::cout << src.l2_norm() << " " << dst_0.l2_norm() << " " << dst_1.l2_norm() << " "
               << dst_2.l2_norm() << std::endl;
+
+
+  if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+    {
+      for (unsigned int i = 0; i < counter; ++i)
+        {
+          std::set<unsigned int> indices_my;
+          std::set<unsigned int> indices_pre;
+          std::set<unsigned int> indices_post;
+          std::set<unsigned int> indices_all;
+          std::set<unsigned int> indices_2;
+          std::set<unsigned int> indices_3;
+
+          for (auto j : my_indices[i])
+            {
+              indices_my.insert(j);
+              indices_all.insert(j);
+            }
+
+
+          for (auto j : pre_indices[i])
+            {
+              indices_pre.insert(j);
+              indices_all.insert(j);
+            }
+
+          for (auto j : post_indices[i])
+            {
+              indices_post.insert(j);
+              indices_all.insert(j);
+            }
+
+          for (auto j : indices_all)
+            {
+              if ((indices_pre.count(j) + indices_post.count(j) + indices_my.count(j)) > 1)
+                indices_2.insert(j);
+              if ((indices_pre.count(j) + indices_post.count(j) + indices_my.count(j)) == 3)
+                indices_3.insert(j);
+            }
+
+
+          std::cout << pre_indices[i].size()                             // pre
+                    << " "                                               //
+                    << my_indices[i].size()                              // current
+                    << " "                                               //
+                    << post_indices[i].size()                            // post
+                    << " "                                               //
+                    << indices_all.size()                                // all
+                    << " "                                               //
+                    << (indices_all.size() * 100 / my_indices[i].size()) // increase    [%]
+                    << " "                                               //
+                    << (indices_2.size() * 100 / indices_all.size())     // reusage: 2x [%]
+                    << " "                                               //
+                    << (indices_3.size() * 100 / indices_all.size())     // reusage: 3x [%]
+                    << " " << std::endl;
+        }
+
+
+      std::cout << std::endl;
+    }
+
+
 
   const double time_power = std::chrono::duration_cast<std::chrono::nanoseconds>(
                               std::chrono::system_clock::now() - temp_time)

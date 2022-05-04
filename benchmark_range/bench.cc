@@ -27,7 +27,10 @@ using namespace dealii;
 
 template <int dim>
 void
-run(const unsigned int s, const unsigned int fe_degree, const unsigned int n_components = 1)
+run(const unsigned int s,
+    const unsigned int fe_degree,
+    const unsigned int n_components,
+    const bool         do_renumbering)
 {
   unsigned int       n_refine  = s / 6;
   const unsigned int remainder = s % 6;
@@ -82,7 +85,8 @@ run(const unsigned int s, const unsigned int fe_degree, const unsigned int n_com
 
   // renumber Dofs to minimize the number of partitions in import indices of
   // partitioner
-  DoFRenumbering::matrix_free_data_locality(dof_handler, constraints, mf_data);
+  if (do_renumbering)
+    DoFRenumbering::matrix_free_data_locality(dof_handler, constraints, mf_data);
 
   DoFTools::extract_locally_relevant_dofs(dof_handler, relevant_dofs);
   constraints.clear();
@@ -195,14 +199,17 @@ run(const unsigned int s, const unsigned int fe_degree, const unsigned int n_com
 int
 main(int argc, char **argv)
 {
-  // mpirun -np 40 ./benchmark_range/bench 5 39
+  // mpirun -np 40 ./benchmark_range/bench 5 39 3 1 (w. renumbering)
+  // mpirun -np 40 ./benchmark_range/bench 5 39 3 0 (wo. renumbering)
   Utilities::MPI::MPI_InitFinalize mpi(argc, argv, 1);
 
-  AssertThrow(argc > 2, ExcNotImplemented());
+  AssertThrow(argc > 4, ExcNotImplemented());
 
-  const unsigned int degree  = std::atoi(argv[1]);
-  const unsigned int n_steps = std::atoi(argv[2]);
+  const unsigned int degree         = std::atoi(argv[1]);
+  const unsigned int n_steps        = std::atoi(argv[2]);
+  const unsigned int n_components   = std::atoi(argv[3]);
+  const bool         do_renumbering = std::atoi(argv[4]);
 
-  run<3>(n_steps, degree);
+  run<3>(n_steps, degree, n_components, do_renumbering);
   return 0;
 }

@@ -26,6 +26,19 @@
 using namespace dealii;
 
 template <int dim>
+class Fu : public Function<dim>
+{
+public:
+  virtual double
+  value(const Point<dim> &p, const unsigned int component) const
+  {
+    (void)component;
+
+    return std::sin(p[0]);
+  }
+};
+
+template <int dim>
 void
 run(const unsigned int s,
     const unsigned int fe_degree,
@@ -112,12 +125,15 @@ run(const unsigned int s,
   std::vector<unsigned int> min_vector(matrix_free.n_cell_batches() * VectorizedArrayType::size(),
                                        numbers::invalid_unsigned_int);
   std::vector<unsigned int> max_vector(matrix_free.n_cell_batches() * VectorizedArrayType::size(),
-                                       numbers::invalid_unsigned_int);
+                                       0);
 
 
-  std::vector<std::vector<unsigned int>> vertices_to_cells(tria.n_vertices());
+  std::vector<std::pair<unsigned int, unsigned int>> vertex_tracker(
+    tria.n_vertices(), std::pair<unsigned int, unsigned int>(numbers::invalid_unsigned_int, 0));
 
-  double dummy = 0;
+  double       dummy   = 0;
+  unsigned int counter = 0;
+
   matrix_free.template loop_cell_centric<double, double>(
     [&](const auto &data, auto &, const auto &, const auto cells) {
       (void)data;
@@ -131,15 +147,22 @@ run(const unsigned int s,
               const auto cell_iterator = matrix_free.get_cell_iterator(cell, v);
 
               for (const auto i : cell_iterator->vertex_indices())
-                vertices_to_cells[cell_iterator->vertex_index(i)].push_back(
-                  cell * VectorizedArrayType::size() + v);
+                {
+                  vertex_tracker[cell_iterator->vertex_index(i)].first =
+                    std::min(vertex_tracker[cell_iterator->vertex_index(i)].first, counter);
+                  vertex_tracker[cell_iterator->vertex_index(i)].second =
+                    std::max(vertex_tracker[cell_iterator->vertex_index(i)].second, counter);
+                }
             }
         }
+      counter++;
     },
     dummy,
     dummy);
 
-  unsigned int counter = 0;
+  std::vector<std::vector<unsigned int>> my_indices(counter);
+
+  counter = 0;
   matrix_free.template loop_cell_centric<double, double>(
     [&](const auto &data, auto &, const auto &, const auto cells) {
       (void)data;
@@ -147,22 +170,25 @@ run(const unsigned int s,
       for (unsigned int cell = cells.first; cell < cells.second; ++cell)
         {
           const auto n_active_entries_per_cell_batch = data.n_active_entries_per_cell_batch(cell);
-
 
           // std::cout << n_active_entries_per_cell_batch << std::endl;
 
           for (unsigned int v = 0; v < n_active_entries_per_cell_batch; ++v)
             {
+              my_indices[counter].push_back(cell * VectorizedArrayType::size() + v);
+
               const auto cell_iterator = matrix_free.get_cell_iterator(cell, v);
 
               for (const auto i : cell_iterator->vertex_indices())
-                for (const auto cell_index : vertices_to_cells[cell_iterator->vertex_index(i)])
-                  {
-                    if (min_vector[cell_index] == numbers::invalid_unsigned_int)
-                      min_vector[cell * VectorizedArrayType::size() + v] = counter;
+                {
+                  min_vector[cell * VectorizedArrayType::size() + v] =
+                    std::min(min_vector[cell * VectorizedArrayType::size() + v],
+                             vertex_tracker[cell_iterator->vertex_index(i)].first);
 
-                    max_vector[cell_index] = counter;
-                  }
+                  max_vector[cell * VectorizedArrayType::size() + v] =
+                    std::max(max_vector[cell * VectorizedArrayType::size() + v],
+                             vertex_tracker[cell_iterator->vertex_index(i)].second);
+                }
             }
         }
       counter++;
@@ -193,6 +219,7 @@ run(const unsigned int s,
   matrix_free.initialize_dof_vector(dst_1);
   matrix_free.initialize_dof_vector(dst_2);
 
+  VectorTools::interpolate(mapping, dof_handler, Fu<dim>(), src);
 
   const auto process_batch = [](const auto &id, auto &phi, auto &dst, const auto &src) {
     phi.reinit(id);
@@ -210,7 +237,9 @@ run(const unsigned int s,
 
   auto temp_time = std::chrono::system_clock::now();
 
-  for (unsigned int c = 0; c < 10; ++c)
+  const unsigned int n_repetitions = 10;
+
+  for (unsigned int c = 0; c < n_repetitions; ++c)
     {
       counter = 0;
       matrix_free.template loop_cell_centric<double, double>(
@@ -265,27 +294,107 @@ run(const unsigned int s,
 
   MPI_Barrier(MPI_COMM_WORLD);
 
+  if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+    std::cout << src.l2_norm() << " " << dst_0.l2_norm() << " " << dst_1.l2_norm() << " "
+              << dst_2.l2_norm() << std::endl;
+
+
+  if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+    {
+      for (unsigned int i = 0; i < counter; ++i)
+        {
+          std::set<unsigned int> indices_my;
+          std::set<unsigned int> indices_pre;
+          std::set<unsigned int> indices_post;
+          std::set<unsigned int> indices_all;
+          std::set<unsigned int> indices_2;
+          std::set<unsigned int> indices_3;
+
+          for (auto j : my_indices[i])
+            {
+              indices_my.insert(j);
+              indices_all.insert(j);
+            }
+
+
+          for (auto j : pre_indices[i])
+            {
+              indices_pre.insert(j);
+              indices_all.insert(j);
+            }
+
+          for (auto j : post_indices[i])
+            {
+              indices_post.insert(j);
+              indices_all.insert(j);
+            }
+
+          for (auto j : indices_all)
+            {
+              if ((indices_pre.count(j) + indices_post.count(j) + indices_my.count(j)) > 1)
+                indices_2.insert(j);
+              if ((indices_pre.count(j) + indices_post.count(j) + indices_my.count(j)) == 3)
+                indices_3.insert(j);
+            }
+
+
+          std::cout << pre_indices[i].size()                             // pre
+                    << " "                                               //
+                    << my_indices[i].size()                              // current
+                    << " "                                               //
+                    << post_indices[i].size()                            // post
+                    << " "                                               //
+                    << indices_all.size()                                // all
+                    << " "                                               //
+                    << (indices_all.size() * 100 / my_indices[i].size()) // increase    [%]
+                    << " "                                               //
+                    << (indices_2.size() * 100 / indices_all.size())     // reusage: 2x [%]
+                    << " "                                               //
+                    << (indices_3.size() * 100 / indices_all.size())     // reusage: 3x [%]
+                    << " " << std::endl;
+        }
+
+
+      std::cout << std::endl;
+    }
+
+
+
   const double time_power = std::chrono::duration_cast<std::chrono::nanoseconds>(
                               std::chrono::system_clock::now() - temp_time)
                               .count() /
                             1e9;
 
 
+  dst_0 = 0.0;
+  dst_1 = 0.0;
+  dst_2 = 0.0;
+
   MPI_Barrier(MPI_COMM_WORLD);
 
   temp_time = std::chrono::system_clock::now();
-  for (unsigned int c = 0; c < 10; ++c)
-    matrix_free.template loop_cell_centric<double, double>(
-      [&](const auto &data, auto &, const auto &, const auto cells) {
-        FEEvaluation<dim, -1, 0, 1, Number, VectorizedArrayType> phi(data);
+  for (unsigned int c = 0; c < n_repetitions; ++c)
+    for (unsigned int c = 0; c < 3; ++c)
+      matrix_free.template loop_cell_centric<double, double>(
+        [&](const auto &data, auto &, const auto &, const auto cells) {
+          FEEvaluation<dim, -1, 0, 1, Number, VectorizedArrayType> phi(data);
 
-        for (unsigned int cell = cells.first; cell < cells.second; ++cell)
-          process_batch(cell, phi, dst_1, dst_0);
-      },
-      dummy,
-      dummy);
+          for (unsigned int cell = cells.first; cell < cells.second; ++cell)
+            if (c == 0)
+              process_batch(cell, phi, dst_0, src);
+            else if (c == 1)
+              process_batch(cell, phi, dst_1, dst_0);
+            else if (c == 2)
+              process_batch(cell, phi, dst_2, dst_1);
+        },
+        dummy,
+        dummy);
 
   MPI_Barrier(MPI_COMM_WORLD);
+
+  if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+    std::cout << src.l2_norm() << " " << dst_0.l2_norm() << " " << dst_1.l2_norm() << " "
+              << dst_2.l2_norm() << std::endl;
 
   const double time_normal = std::chrono::duration_cast<std::chrono::nanoseconds>(
                                std::chrono::system_clock::now() - temp_time)
